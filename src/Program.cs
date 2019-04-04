@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 
 namespace File2ArduinoHeaderFile
 {
@@ -8,7 +9,7 @@ namespace File2ArduinoHeaderFile
     {
         static void Main(string[] args)
         {
-            AnalyzeStartArguments(args, out string filePath, out bool doNotIgnoreHeaderFiles, out string directory);
+            AnalyzeStartArguments(args, out string filePath, out bool doNotIgnoreHeaderFiles, out string directory, out bool doGzip);
 
             List<string> files = new List<string>();
 
@@ -43,13 +44,74 @@ namespace File2ArduinoHeaderFile
 
             foreach (var file in files)
             {
-                ConvertFileToHeaderFile(file);
+                ConvertFileToHeaderFile(file, doGzip);
             }
         }
 
-        private static void ConvertFileToHeaderFile(string filePath)
+        private static string GetAllExtensionsFromFileName(string fileName)
         {
+            var result = "";
+            var parts = fileName.Split(".");
 
+            for (int i = 1; i < parts.Length; i++)
+                result += $".{parts[i]}";
+
+            return result;
+        }
+
+        private static void ConvertFileToHeaderFile(string filePath, bool doGzip)
+        {
+            var fileName = Path.GetFileName(filePath);
+            var fileNameWithoutExtension = fileName.Split(".")[0];
+            var directoryPath = Path.GetDirectoryName(filePath);
+            var fileExtension = GetAllExtensionsFromFileName(filePath).Replace(".", "-");
+
+            if (string.IsNullOrWhiteSpace(fileName) || string.IsNullOrWhiteSpace(fileNameWithoutExtension))
+                throw new Exception($"Something went wrong, fileName not found in filePath '{filePath}'");
+
+            var headerFileName = $"{fileNameWithoutExtension}{fileExtension}.h";
+            var headerFilePath = Path.Combine(directoryPath, headerFileName);
+
+            if (File.Exists(headerFilePath))
+                Console.WriteLine($"File already exists and will not be overridden: '{headerFilePath}'");
+            else
+            {
+                var inputBytes = File.ReadAllBytes(filePath);
+
+                using (var headerFileStream = File.Create(headerFilePath))
+                {
+                    var prefix = $"const byte {FirstCharToLower(fileNameWithoutExtension)}{GetFileExtensionHeaderFile(fileExtension)}[] PROGMEM = {{";
+                    headerFileStream.Write(Encoding.ASCII.GetBytes(prefix));
+
+                    for (int i = 0; i < inputBytes.Length; i++)
+                    {
+                        var stringRepresentation = $" 0x{inputBytes[i].ToString("X2")}";
+                        if (i != inputBytes.Length - 1)
+                            stringRepresentation += ", ";
+                        if (i % 20 == 0)
+                            stringRepresentation = "\n" + stringRepresentation;
+
+                        headerFileStream.Write(Encoding.ASCII.GetBytes(stringRepresentation));
+                    }
+
+                    var suffix = "\n};";
+
+                    headerFileStream.Write(Encoding.ASCII.GetBytes(suffix));
+                }
+            }
+        }
+
+        private static object GetFileExtensionHeaderFile(string fileExtension)
+        {
+            var parts = fileExtension.Split("-");
+            var result = FirstCharToLower(parts[0]);
+
+            for (int i = 1; i < parts.Length; i++)
+            {
+                result += FirstCharToUpper(parts[i]);
+            }
+
+            return result;
         }
 
         private static List<string> GetFilesInDirConsideringHeaderFiles(string directory, bool doNotIgnoreHeaderFiles)
@@ -63,11 +125,12 @@ namespace File2ArduinoHeaderFile
             return files;
         }
 
-        private static void AnalyzeStartArguments(string[] args, out string filePath, out bool doNotIgnoreHeaderFiles, out string directory)
+        private static void AnalyzeStartArguments(string[] args, out string filePath, out bool doNotIgnoreHeaderFiles, out string directory, out bool doGzip)
         {
             filePath = null;
             doNotIgnoreHeaderFiles = false;
             directory = null;
+            doGzip = false;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -77,7 +140,7 @@ namespace File2ArduinoHeaderFile
                 if (currentArg.StartsWith("-f", StringComparison.InvariantCultureIgnoreCase) || currentArg.StartsWith("--file", StringComparison.InvariantCultureIgnoreCase))
                 {
                     if (nextArg != null)
-                        filePath = nextArg;
+                        filePath = nextArg.Replace("\"", "");
                     else
                         throw new ArgumentException("You must provide a valid filePath when using parameter '-f'!");
                 }
@@ -88,11 +151,37 @@ namespace File2ArduinoHeaderFile
                 else if (currentArg.StartsWith("-d", StringComparison.InvariantCultureIgnoreCase) || currentArg.StartsWith("--directory", StringComparison.InvariantCultureIgnoreCase))
                 {
                     if (nextArg != null)
-                        directory = nextArg;
+                        directory = nextArg.Replace("\"", "");
                     else
                         throw new ArgumentException("You must provide a valid directory when using parameter '-d'!");
                 }
+                else if (currentArg.StartsWith("-g", StringComparison.InvariantCultureIgnoreCase) || currentArg.StartsWith("--gzip", StringComparison.InvariantCultureIgnoreCase))
+                {
+                    doGzip = true;
+                }
             }
+        }
+
+        private static string FirstCharToUpper(string s)
+        {
+            // Check for empty string.  
+            if (string.IsNullOrEmpty(s))
+            {
+                return string.Empty;
+            }
+            // Return char and concat substring.  
+            return char.ToUpper(s[0]) + s.Substring(1);
+        }
+
+        private static string FirstCharToLower(string s)
+        {
+            // Check for empty string.  
+            if (string.IsNullOrEmpty(s))
+            {
+                return string.Empty;
+            }
+            // Return char and concat substring.  
+            return char.ToLower(s[0]) + s.Substring(1);
         }
     }
 }
