@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 
 namespace File2ArduinoHeaderFile
@@ -59,6 +60,19 @@ namespace File2ArduinoHeaderFile
             return result;
         }
 
+        private static byte[] GzipBytes(byte[] inputBytes)
+        {
+            using (var ms = new MemoryStream())
+            {
+                using (GZipStream gzipStream = new GZipStream(ms, CompressionMode.Compress, true))
+                {
+                    gzipStream.Write(inputBytes, 0, inputBytes.Length);
+                }
+
+                return ms.ToArray();
+            }
+        }
+
         private static void ConvertFileToHeaderFile(string filePath, bool doGzip)
         {
             var fileName = Path.GetFileName(filePath);
@@ -77,6 +91,8 @@ namespace File2ArduinoHeaderFile
             else
             {
                 var inputBytes = File.ReadAllBytes(filePath);
+                if (doGzip)
+                    inputBytes = GzipBytes(inputBytes);
 
                 using (var headerFileStream = File.Create(headerFilePath))
                 {
